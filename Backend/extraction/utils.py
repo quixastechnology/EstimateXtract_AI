@@ -99,39 +99,57 @@ def extract_structured_data_from_text(text: str):
 
 # Function to parse the unstructured output
 def parse_extracted_data(raw_data: str) -> ProjectSpecifications:
-    """Parse the raw output from the OpenAI API into structured data."""
+    """Parse structured table data into window and door specifications."""
     windows = []
     doors = []
 
-    # Flexible regex patterns for specifications based on table-like structure
-    window_pattern = re.compile(r"\|\s*([\w\s\-]+)\s*\|\s*([\w\s]+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*([\w\s\-]+)\s*\|\s*([\w]+)\s*\|\s*(\d+)\s*\|\s*([\w\s]+)\s*\|")
-    door_pattern = re.compile(r"\|\s*([\w\s\-]+)\s*\|\s*([\w\s]+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*([\w\s\-]+)\s*\|\s*([\w]+)\s*\|\s*(\d+)\s*\|\s*([\w\s]+)\s*\|")
+    # Split lines and iterate over the rows of the table
+    lines = raw_data.splitlines()
 
-    # Extracting Window Specifications
-    for match in window_pattern.finditer(raw_data):
-        windows.append(WindowSpecification(
-            window_type=match.group(1).strip(),
-            material=match.group(2).strip(),
-            width_inches=str(match.group(3)),  # Convert to string
-            height_inches=str(match.group(4)),  # Convert to string
-            glass_type=match.group(5).strip(),
-            color=match.group(6).strip(),
-            quantity=int(match.group(7)),
-            manufacturer=match.group(8).strip()
-        ))
+    # Determine if we are in the windows or doors section
+    current_section = None
 
-    # Extracting Door Specifications
-    for match in door_pattern.finditer(raw_data):
-        doors.append(DoorSpecification(
-            door_type=match.group(1).strip(),
-            material=match.group(2).strip(),
-            width_inches=str(match.group(3)),  # Convert to string
-            height_inches=str(match.group(4)),  # Convert to string
-            glass_type=match.group(5).strip(),
-            color=match.group(6).strip(),
-            quantity=int(match.group(7)),
-            manufacturer=match.group(8).strip()
-        ))
+    for line in lines:
+        line = line.strip()
+
+        # Check for section headers
+        if "Window Type" in line:
+            current_section = "windows"
+            continue
+        elif "Door Type" in line:
+            current_section = "doors"
+            continue
+
+        # Skip header separator rows
+        if line.startswith("|---"):
+            continue
+
+        # Split the line into columns by the pipe '|' separator
+        columns = [col.strip() for col in line.split("|") if col.strip()]
+
+        if len(columns) == 8:  # We expect 8 columns based on the table structure
+            if current_section == "windows":
+                windows.append(WindowSpecification(
+                    window_type=columns[0],
+                    material=columns[1],
+                    width_inches=columns[2],
+                    height_inches=columns[3],
+                    glass_type=columns[4],
+                    color=columns[5],
+                    quantity=int(columns[6]),
+                    manufacturer=columns[7]
+                ))
+            elif current_section == "doors":
+                doors.append(DoorSpecification(
+                    door_type=columns[0],
+                    material=columns[1],
+                    width_inches=columns[2],
+                    height_inches=columns[3],
+                    glass_type=columns[4],
+                    color=columns[5],
+                    quantity=int(columns[6]),
+                    manufacturer=columns[7]
+                ))
 
     return ProjectSpecifications(windows=windows, doors=doors)
 
@@ -151,12 +169,13 @@ def process_pdf(file_obj):
     
     # Pass the combined text to the OpenAI model for structured data extraction
     structured_data = extract_structured_data_from_text(combined_text)
+    #print(structured_data)
     if structured_data is None:
         return {"windows": [], "doors": []}
 
     # Parse the extracted raw data into structured JSON
     parsed_data = parse_extracted_data(structured_data)
-    print(parsed_data)
+    #print(parsed_data)
     return {
         "windows": [window.dict() for window in parsed_data.windows],
         "doors": [door.dict() for door in parsed_data.doors]
